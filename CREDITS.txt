@@ -1,0 +1,37 @@
+Piano sound (piano.wav)
+-----------------------
+Salamander Grand Piano V3 by Alexander Holm (Yamaha C5 grand piano),
+licensed under Creative Commons Attribution 3.0 (CC BY 3.0):
+https://creativecommons.org/licenses/by/3.0/
+
+The mp3 version used here is the one hosted by the Tone.js project:
+https://tonejs.github.io/audio/salamander/
+
+piano.wav was assembled from those recordings by tools/build-piano.ps1
+(keys C1-C7, 8 seconds per key; keys between recordings are pitch-shifted
+by one semitone).
+
+Bass sound (bass.wav, web/bass-samples.js)
+------------------------------------------
+Pop styles: electric bass samples from tonejs-instruments by Nicholaus
+Brosowsky, licensed under Creative Commons Attribution 3.0 (CC BY 3.0):
+https://github.com/nbrosowsky/tonejs-instruments
+bass.wav was assembled from those recordings by tools/build-bass.ps1
+(keys C#1-E4, 6 seconds per key).
+
+Double bass (upright.wav, web/upright-samples.js)
+-------------------------------------------------
+Jazz styles: pizzicato double bass from VSCO 2 Community Edition by
+Versilian Studios, released under CC0 (public domain):
+https://github.com/sgossner/VSCO-2-CE (Strings/Solo Contrabass/Pizz)
+upright.wav was assembled from those recordings by tools/build-upright.ps1
+(keys C#1-E4, 6 seconds per key).
+
+Drum sounds (drums.wav, web/drum-samples.js)
+--------------------------------------------
+One-shots from VCSL, the Versilian Community Sample Library,
+released under CC0 (public domain):
+https://github.com/michaelwillis/VCSL
+
+drums.wav was assembled from those recordings by tools/build-drums.ps1
+(drum notes 36-51, 3 seconds per note).

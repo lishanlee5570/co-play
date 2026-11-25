@@ -1,0 +1,15 @@
+# private working notes and local state
+CLAUDE.md
+.claude/
+co-play-controls.txt
+
+# takes are saved here; the folder itself must exist (Max cannot create it)
+recordings/*
+!recordings/README.txt
+
+# old or unused files
+co-improv-zh.maxpat
+comp-voice.maxpat
+drum-voice-synth.maxpat
+/build-upright.ps1
+web/*.webm

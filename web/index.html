@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>co-play 网页版</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --panel: #ffffff; --ink: #24231f; --muted: #6f6c64; --line: #dcd9d0;
+    --accent: #2f6f5e; --accent-ink: #ffffff; --key: #ffffff; --key-black: #2b2a27; --lit: #e8a33d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1d1c1a; --panel: #272623; --ink: #ecebe6; --muted: #a29f96; --line: #3d3b37;
+      --accent: #5fb39b; --accent-ink: #10201b; --key: #e9e7e1; --key-black: #121110; --lit: #e8a33d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+  label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  select, input[type=number] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=number] { width: 70px; }
+  button { font: inherit; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 8px 18px; cursor: pointer; }
+  button.off { background: transparent; color: var(--accent); }
+  #beat { font-size: 28px; font-weight: 600; min-height: 42px; }
+  /* orange: a proposal waits for her; green: accepted; blue: it went back, still acceptable for a bar */
+  #beat[data-mood="proposal"] { color: #d9822b; }
+  #beat[data-mood="accepted"] { color: #2f9e57; }
+  #beat[data-mood="back"] { color: #4a86d8; }
+  #status { color: var(--muted); min-height: 24px; }
+  #chordName { font-size: 22px; font-weight: 600; }
+  #midiState { font-size: 13px; color: var(--muted); }
+  #keys { position: relative; height: 70px; margin-top: 6px; user-select: none; }
+  #keys div { position: absolute; top: 0; border: 1px solid var(--line); border-radius: 0 0 4px 4px; }
+  #keys .w { height: 70px; background: var(--key); }
+  #keys .b { height: 44px; background: var(--key-black); z-index: 1; }
+  #keys .on { background: var(--lit); }
+  .banner { border-color: var(--lit); font-weight: 600; cursor: pointer; }
+  .banner.flash { background: var(--lit); color: #24231f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>co-play 网页版（开发测试用）</h1>
+  <p class="note">和 Max 版用同一套伴奏大脑（comp.js、chord-name.js）。用 Chrome 或 Edge 打开，插上 MIDI 键盘，点「开始」。</p>
+
+  <div id="soundBanner" class="panel banner">还没有声音：先用鼠标点一下这个页面（任意位置），浏览器才允许发声。</div>
+
+  <div class="panel">
+    <div class="row">
+      <button id="play">开始</button>
+      <button id="finish" class="off" disabled title="4 小节后奏结束和弦并停止；把大胆度旋钮拧到底也一样">结束（4 小节后）</button>
+      <div id="beat">停止</div>
+    </div>
+    <div id="status">-</div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <span>现在的和弦</span><span id="chordName">-</span>
+      <button id="accept" class="off">接受系统的提议</button>
+      <button id="reject">拒绝这个和弦</button>
+    </div>
+    <p class="note" style="margin:6px 0 0"><b>觉得这小节的和弦不好听</b>：点「拒绝这个和弦」、按 x 键或把弯音条往下推，系统马上换一个，这里以后也少用它。系统提议另一种和声时（大字变橙色），把键盘左边的<b>弯音条往上推</b>、踩延音踏板、按空格键、按设好的接受按钮或点这个按钮就是接受（拒绝 = 马上退回）：乐队会马上一起重奏新和弦，大字变绿。不接受就什么都不用做，第 3 拍回到原来的和声（大字变蓝，这一小节里按接受还能换回来）。</p>
+    <div id="keys"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <label>风格 <select id="style"></select></label>
+      <label>调 <select id="key"></select></label>
+      <label>钢琴呼应 <select id="respond">
+        <option value="0">原来（固定节奏型）</option><option value="1">填空</option><option value="2">节奏互补</option>
+        <option value="3">第二声部</option><option value="4">模仿节奏</option><option value="5">混合（2+3+1）</option>
+      </select></label>
+      <label>速度 BPM <input id="bpm" type="number" min="40" max="200" value="90"></label>
+      <label>分界音 <input id="split" type="number" min="24" max="96" value="60"></label>
+      <label><input id="mine" type="checkbox" checked> 我的声音</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>我的音量 <input id="mineVol" type="range" min="0" max="4" step="0.1" value="1.6" style="width:140px"></label>
+      <span id="mineVolValue">1.6</span>
+      <label>伴奏音量 <input id="bandVol" type="range" min="0" max="2" step="0.05" value="0.8" style="width:140px"></label>
+      <span id="bandVolValue">0.8</span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span>伴奏乐器</span>
+      <label><input id="drums" type="checkbox" checked> 鼓</label>
+      <label><input id="bass" type="checkbox" checked> 贝斯</label>
+      <label><input id="piano" type="checkbox" checked> 钢琴</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>大胆度 <input id="bold" type="range" min="0" max="100" value="30" style="width:180px"></label>
+      <span id="boldValue">30</span>
+      <span class="note" style="margin:0">0 = 从不提议；越大提得越多、离原来的和声越远</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label><input id="autobold" type="checkbox" checked> 自动调大胆度</label>
+      <span class="note" style="margin:0">接受一次 +5，退回一次 −5（只在 10–90 之间自动变）</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="learnknob">设大胆度旋钮</button>
+      <button id="learnfinish">设结束旋钮</button>
+      <button id="learnaccept">加一个接受按钮</button>
+      <span id="knobState" class="note" style="margin:0">点一个按钮，再动一下键盘上的旋钮或按钮，就记住了（大字会显示记住的是哪个）</span>
+    </div>
+    <p class="note" style="margin:10px 0 0">分界音 60 = 中央 C。键盘自己会发声时，关掉「我的声音」。</p>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <label>MIDI 键盘 <select id="midiIn"><option value="">（全部）</option></select></label>
+      <span id="midiState">还没连接</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span id="midiLast" class="note" style="margin:0">收到：（踩一下踏板、转一下旋钮，这里会显示键盘发来了什么）</span>
+    </div>
+  </div>
+
+  <div class="panel" id="takePanel" style="display:none">
+    <div class="row">
+      <b>刚才这次演奏</b>
+      <a id="dlAudio" style="display:none">下载录音（音频）</a>
+      <a id="dlMidi" style="display:none">下载 MIDI（用 MuseScore 打开就是谱子）</a>
+      <a id="dlChart" style="display:none">下载和弦谱</a>
+      <button id="forget" class="off">清空记忆</button>
+    </div>
+    <pre id="chart" style="white-space:pre-wrap;font:14px/1.7 ui-monospace,Consolas,'Microsoft YaHei',monospace;margin:10px 0 0"></pre>
+    <p class="note" style="margin:6px 0 0">系统会记住你接受过的换法：同样的地方再出现时（比如弹第二遍）会自动换上（↺）；不想要了就把弯音条往下推。「清空记忆」= 全部忘掉。</p>
+  </div>
+
+  <p class="note">钢琴：Salamander Grand Piano（Alexander Holm，CC BY 3.0）。低音提琴：VSCO 2 Community Edition（Versilian Studios，CC0）。鼓：VCSL（CC0）。</p>
+</main>
+
+<script src="piano-samples.js"></script>
+<script src="bass-samples.js"></script>
+<script src="upright-samples.js"></script>
+<script src="drum-samples.js"></script>
+<script src="brains.js"></script>
+<script>
+"use strict";
+
+const STYLE_NAMES = ["流行 8 Beat", "流行抒情", "摇滚", "16 Beat", "华尔兹 3/4", "爵士 Swing", "爵士抒情", "Bossa Nova"];
+const KEY_NAMES = ["1 = C", "1 = bD", "1 = D", "1 = bE", "1 = E", "1 = F", "1 = #F", "1 = G", "1 = bA", "1 = A", "1 = bB", "1 = B"];
+const SPB = 12;                 // ticks per beat, as in comp.js
+const LOOKAHEAD = 0.025;        // seconds of ticks prepared ahead of the audio clock
+const $ = id => document.getElementById(id);
+
+// ---------- audio ----------
+let ctx = null, master = null, mineBus = null, bandBus = null;
+const samples = {};             // midi -> AudioBuffer, one every minor third from A0
+const SAMPLE_NAMES = { 0: "C", 3: "Ds", 6: "Fs", 9: "A" };
+
+// browsers only allow sound after the page has been clicked; a MIDI key does not count
+let audioReady = null;
+function initAudio() {
+  if (!audioReady) audioReady = setupAudio();
+  return audioReady.then(() => ctx.state === "running" ? null : ctx.resume()).then(showSoundState);
+}
+function soundOn() { return ctx && ctx.state === "running" && samples[60]; }
+function showSoundState() {
+  $("soundBanner").style.display = soundOn() ? "none" : "";
+}
+document.addEventListener("pointerdown", () => initAudio(), true);
+document.addEventListener("keydown", () => initAudio(), true);
+
+async function setupAudio() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: "interactive" });
+  ctx.onstatechange = showSoundState;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -10; comp.ratio.value = 4;
+  master = ctx.createGain(); master.gain.value = 0.9;
+  master.connect(comp).connect(ctx.destination);
+  if (ctx.createMediaStreamDestination) { recDest = ctx.createMediaStreamDestination(); comp.connect(recDest); }
+  // the player's own sound and the band each have their own volume
+  mineBus = ctx.createGain(); mineBus.gain.value = Number($("mineVol").value);
+  bandBus = ctx.createGain(); bandBus.gain.value = Number($("bandVol").value);
+  mineBus.connect(master); bandBus.connect(master);
+  const jobs = [];
+  const decode = (b64, store, m) => {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    jobs.push(ctx.decodeAudioData(bytes.buffer).then(buf => { store[m] = buf; }));
+  };
+  for (let m = 21; m <= 108; m += 3) decode(window.PIANO_SAMPLES[SAMPLE_NAMES[m % 12] + (Math.floor(m / 12) - 1)], samples, m);
+  for (const m in window.BASS_SAMPLES) decode(window.BASS_SAMPLES[m], bassSamples.electric, Number(m));
+  for (const m in window.UPRIGHT_SAMPLES) decode(window.UPRIGHT_SAMPLES[m], bassSamples.upright, Number(m));
+  for (const m in window.DRUM_SAMPLES) decode(window.DRUM_SAMPLES[m], drumSamples, Number(m));
+  await Promise.all(jobs);
+}
+
+// bass: electric in the pop styles, pizzicato double bass in the jazz styles (comp outlet 8, as
+// bass-voice.maxpat / upright-voice.maxpat); the nearest recording, keyed by the note it sounds, shifted
+const bassSamples = { electric: {}, upright: {} }, drumSamples = {};
+let bassKind = "electric";
+const BASS_TONE = { electric: { lo: 350, range: 1200, gain: 0.6 }, upright: { lo: 700, range: 3500, gain: 0.75 } };
+function nearestKey(store, p) {
+  let best = null;
+  for (const k in store) if (best === null || Math.abs(k - p) < Math.abs(best - p)) best = Number(k);
+  return best;
+}
+function bassNote(pitch, velocity, ms, when) {
+  const store = bassSamples[bassKind], tone = BASS_TONE[bassKind];
+  const base = nearestKey(store, pitch);
+  const src = ctx.createBufferSource();
+  src.buffer = store[base];
+  src.playbackRate.value = Math.pow(2, (pitch - base) / 12);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = tone.lo + Math.pow(velocity / 127, 2) * tone.range;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(Math.pow(velocity / 127, 1.5) * tone.gain, when + 0.003);
+  src.connect(lp).connect(g).connect(bandBus);
+  src.start(when);
+  const off = when + ms / 1000;
+  if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(off);
+  g.gain.setTargetAtTime(0, off, 0.03);
+  src.stop(off + 0.3);
+}
+
+// piano voice: nearest recording, shifted at most one semitone; soft notes darker, as in piano-voice.maxpat
+const sounding = new Map();     // key -> {gain, src}, for notes the player holds
+function pianoOn(pitch, velocity, when, bus) {
+  const p = Math.max(21, Math.min(108, pitch));
+  const base = Math.max(21, Math.min(108, Math.round((p - 21) / 3) * 3 + 21));
+  const src = ctx.createBufferSource();
+  src.buffer = samples[base];
+  src.playbackRate.value = Math.pow(2, (p - base) / 12);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 900 + Math.pow(velocity / 127, 2) * 12000;
+  const g = ctx.createGain();
+  const level = Math.pow(velocity / 127, 1.5) * 0.45;
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(level, when + 0.003);
+  src.connect(lp).connect(g).connect(bus);
+  src.start(when);
+  return { g, src };
+}
+// release: hold whatever level the note has at that moment, then fade like a damper
+function pianoOff(voice, when) {
+  const gain = voice.g.gain;
+  if (gain.cancelAndHoldAtTime) gain.cancelAndHoldAtTime(when);
+  gain.setTargetAtTime(0, when, 0.06);
+  voice.src.stop(when + 0.5);
+}
+function pianoNote(pitch, velocity, ms, when) {
+  pianoOff(pianoOn(pitch, velocity, when, bandBus), when + ms / 1000);
+}
+
+// drums: one recording per drum note (as drum-voice.maxpat); softer hits a little darker
+// DRUM_GAIN matches the Gain of drum-voice.maxpat (she found the drums far too loud in the recording at 1)
+const DRUM_GAIN = 0.5;
+function drum(note, velocity, when) {
+  const buf = drumSamples[note];
+  if (!buf) return;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 5000 + Math.pow(velocity / 127, 2) * 13000;
+  const g = ctx.createGain();
+  g.gain.value = Math.pow(velocity / 127, 1.5) * DRUM_GAIN;
+  src.connect(lp).connect(g).connect(bandBus);
+  src.start(when);
+}
+
+// ---------- the two brains, wired like co-improv.maxpat ----------
+let tickTime = null;            // audio time of the tick being processed
+
+// Max's Task (a one-shot timer the brains use); its output sounds immediately
+window.Task = function (fn) { this.fn = fn; this.id = null; };
+Task.prototype.schedule = function (ms) { this.cancel(); this.id = setTimeout(() => { this.id = null; tickTime = null; this.fn(); }, ms || 0); };
+Task.prototype.cancel = function () { if (this.id !== null) clearTimeout(this.id); this.id = null; };
+const toArgs = x => Array.isArray(x) ? x : [x];
+const comp = BRAINS.comp((n, v) => compOut(n, v), args => Array.prototype.slice.call(args), (...a) => console.log("[comp]", ...a));
+const chordName = BRAINS.chordName((n, v) => chordOut(n, v), args => Array.prototype.slice.call(args), (...a) => console.log("[chord-name]", ...a));
+
+function compOut(n, v) {
+  const when = tickTime !== null ? tickTime : (ctx ? ctx.currentTime : 0);
+  if (n === 0 && ctx) { const [p, vel, ms, delay] = v; pianoNote(p, vel, ms, when + (delay || 0) / 1000); }
+  else if (n === 5 && ctx) { const [p, vel, ms, delay] = v; bassNote(p, vel, ms, when + (delay || 0) / 1000); }
+  else if (n === 1) $("status").textContent = toArgs(v).join("  ");
+  else if (n === 2 && ctx && $("drums").checked) { const [note, vel] = v; drum(note, vel, when); }
+  else if (n === 3) {
+    $("beat").textContent = v;
+  }
+  else if (n === 4) $("chordName").textContent = v;
+  else if (n === 7) { $("bold").value = v; $("boldValue").textContent = v; }
+  else if (n === 8) bassKind = v ? "upright" : "electric";
+  else if (n === 9 && running) setTimeout(() => stopClock(), 0);   // the ending has played its final chord
+  else if (n === 10) $("knobState").textContent = v;
+  else if (n === 12) {
+    $("beat").dataset.mood = v;
+    $("accept").classList.toggle("off", v !== "proposal" && v !== "back");
+  }
+  else if (n === 11) { try { localStorage.setItem("coplay-controls", JSON.stringify(toArgs(v))); } catch (e) {} }
+}
+// chord-name's own label (outlet 0) is the raw reading of the keys; the display shows comp's chord
+function chordOut(n, v) {
+  if (n === 2) comp.call("chord", toArgs(v));
+}
+
+// a key goes to comp first, then to chord-name (the order the patch delivers them)
+function handleNote(pitch, velocity) {
+  if (!soundOn()) {
+    const b = $("soundBanner");
+    b.style.display = "";
+    b.classList.add("flash");
+    setTimeout(() => b.classList.remove("flash"), 300);
+  }
+  if ($("mine").checked && soundOn()) {
+    const old = sounding.get(pitch);
+    if (old) { pianoOff(old, ctx.currentTime); sounding.delete(pitch); }
+    if (velocity > 0) sounding.set(pitch, pianoOn(pitch, velocity, ctx.currentTime, mineBus));
+  }
+  comp.call("played", [pitch, velocity]);
+  chordName.call("list", [pitch, velocity]);
+  lightKey(pitch, velocity > 0);
+}
+
+// ---------- clock: one tick = 1/12 beat, scheduled on the audio clock ----------
+let running = false, nextTick = 0, timer = null;
+const tickSeconds = () => 60 / Number($("bpm").value || 90) / SPB;
+function schedule() {
+  while (nextTick < ctx.currentTime + LOOKAHEAD) {
+    tickTime = nextTick;
+    comp.call("bang");
+    tickTime = null;
+    nextTick += tickSeconds();
+  }
+}
+async function togglePlay() {
+  await initAudio();
+  if (running) { comp.call("stop"); stopClock(); return; }
+  running = true;
+  $("play").textContent = "停止";
+  $("play").classList.add("off");
+  $("finish").disabled = false;
+  comp.call("start");
+  startRecording();
+  nextTick = ctx.currentTime + 0.05;
+  timer = setInterval(schedule, 5);
+  schedule();
+}
+function stopClock() {
+  running = false;
+  clearInterval(timer);
+  $("play").textContent = "开始";
+  $("play").classList.remove("off");
+  $("finish").disabled = true;
+  stopRecording();
+  showTake();
+}
+
+// ---------- this take: the sound (MediaRecorder), the MIDI file and the chord chart from comp.js ----------
+let recDest = null, recorder = null, recChunks = [], takeName = "co-play-take";
+function startRecording() {
+  takeName = comp.call("takename");
+  if (!recDest || !window.MediaRecorder) return;
+  recChunks = [];
+  recorder = new MediaRecorder(recDest.stream);
+  recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+    setDownload("dlAudio", blob, takeName + (blob.type.includes("ogg") ? ".ogg" : ".webm"));
+  };
+  recorder.start();
+}
+function stopRecording() { if (recorder && recorder.state !== "inactive") recorder.stop(); }
+function setDownload(id, blob, name) {
+  const a = $(id);
+  if (a.href) URL.revokeObjectURL(a.href);
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.style.display = "";
+}
+function showTake() {
+  $("takePanel").style.display = "";
+  const chart = comp.call("charttext");
+  $("chart").textContent = chart;
+  setDownload("dlChart", new Blob(["﻿" + chart], { type: "text/plain;charset=utf-8" }), takeName + ".txt");
+  setDownload("dlMidi", new Blob([new Uint8Array(comp.call("midibytes"))], { type: "audio/midi" }), takeName + ".mid");
+}
+
+// ---------- controls (same messages as the patch) ----------
+STYLE_NAMES.forEach((n, i) => $("style").add(new Option(n, i)));
+KEY_NAMES.forEach((n, i) => $("key").add(new Option(n, i)));
+$("style").onchange = e => comp.call("style", [Number(e.target.value)]);
+$("key").onchange = e => comp.call("key", [Number(e.target.value)]);
+$("respond").onchange = e => comp.call("respond", [Number(e.target.value)]);
+$("bpm").onchange = e => comp.call("tempo", [Number(e.target.value)]);
+$("split").onchange = e => { const n = Number(e.target.value); comp.call("split", [n]); chordName.call("split", [n]); };
+$("drums").onchange = e => comp.call("drums", [e.target.checked ? 1 : 0]);
+$("bass").onchange = e => comp.call("playbass", [e.target.checked ? 1 : 0]);
+$("piano").onchange = e => comp.call("playpiano", [e.target.checked ? 1 : 0]);
+$("bold").oninput = e => { $("boldValue").textContent = e.target.value; comp.call("bold", [Number(e.target.value)]); };
+$("accept").onclick = () => comp.call("accept");
+$("reject").onclick = () => comp.call("reject");
+$("forget").onclick = () => comp.call("forget");
+$("mineVol").oninput = e => { $("mineVolValue").textContent = e.target.value; if (mineBus) mineBus.gain.value = Number(e.target.value); };
+$("bandVol").oninput = e => { $("bandVolValue").textContent = e.target.value; if (bandBus) bandBus.gain.value = Number(e.target.value); };
+$("autobold").onchange = e => comp.call("autobold", [e.target.checked ? 1 : 0]);
+// teaching the keyboard's controls: comp names the one it learned on the big display
+const LEARN_HINT = { learnknob: "现在转一下你想用来调大胆度的旋钮……", learnfinish: "现在转一下你想用来结束的旋钮……",
+  learnaccept: "现在按一下键盘上想用来接受提议的按钮（可以设好几个，每个按一次这个按钮）……" };
+for (const id of Object.keys(LEARN_HINT)) $(id).onclick = () => { comp.call(id); $("knobState").textContent = LEARN_HINT[id]; };
+// space bar accepts, x rejects (unless typing into a number box)
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { e.preventDefault(); comp.call("accept"); }
+  else if (e.code === "KeyX" && !e.repeat) comp.call("reject");
+});
+$("play").onclick = togglePlay;
+$("finish").onclick = () => comp.call("finish");
+comp.call("tempo", [90]);
+comp.call("lang", ["zh"]);   // the shared brain defaults to English (the Max panel); this page is in Chinese
+comp.call("split", [60]);
+chordName.call("split", [60]);
+comp.call("style", [0]);
+comp.call("key", [0]);
+comp.call("drums", [1]);
+comp.call("bold", [30]);
+// the keyboard controls taught last time (kept in this browser)
+(() => {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem("coplay-controls") || "null"); } catch (e) {}
+  if (Array.isArray(saved) && saved.length >= 2) comp.call("setcontrols", saved);
+  else comp.call("showcontrols");
+})();
+
+// ---------- on-screen keyboard (shows what is held) ----------
+const keyEls = {};
+(function drawKeys() {
+  const box = $("keys"), lo = 36, hi = 96;
+  const whites = []; for (let m = lo; m <= hi; m++) if (![1, 3, 6, 8, 10].includes(m % 12)) whites.push(m);
+  const w = 100 / whites.length;
+  whites.forEach((m, i) => { const d = document.createElement("div"); d.className = "w"; d.style.left = (i * w) + "%"; d.style.width = w + "%"; box.appendChild(d); keyEls[m] = d; });
+  for (let m = lo; m <= hi; m++) if ([1, 3, 6, 8, 10].includes(m % 12)) {
+    const i = whites.indexOf(m - 1);
+    const d = document.createElement("div"); d.className = "b";
+    d.style.left = ((i + 1) * w - w * 0.3) + "%"; d.style.width = (w * 0.6) + "%";
+    box.appendChild(d); keyEls[m] = d;
+  }
+})();
+function lightKey(m, on) { if (keyEls[m]) keyEls[m].classList.toggle("on", on); }
+
+// ---------- MIDI ----------
+let midi = null;
+// what the keyboard last sent, in words (to see whether a pedal, knob or strip is getting through)
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+function describeMidi(type, data1, data2) {
+  if (type === 0x90 || type === 0x80) return `琴键 ${NOTE_NAMES[data1 % 12]}${Math.floor(data1 / 12) - 1}（力度 ${type === 0x80 ? 0 : data2}）`;
+  if (type === 0xb0 && data1 >= 64 && data1 <= 67) return `踏板 CC${data1} = ${data2}（${data2 >= 64 ? "127 一边" : "0 一边"}）`;
+  if (type === 0xb0) return `旋钮/按钮 CC${data1} = ${data2}`;
+  if (type === 0xe0) return `弯音条 = ${data2}（中间是 64）`;
+  return `其他信号 ${type.toString(16)} ${data1} ${data2}`;
+}
+function onMidi(e) {
+  if ($("midiIn").value && e.target.id !== $("midiIn").value) return;
+  const [status, data1, data2] = e.data, type = status & 0xf0;
+  if (type !== 0xf0) $("midiLast").textContent = `收到：${describeMidi(type, data1, data2)}　来自 ${e.target.name || ""}`;
+  if (type === 0x90) handleNote(data1, data2);
+  else if (type === 0x80) handleNote(data1, 0);
+  else if (type === 0xb0 && data1 === 64) comp.call("pedal", [data2]);   // sustain pedal: pressing it accepts a proposal
+  else if (type === 0xe0) comp.call("bend", [data2]);   // pitch-bend strip: up = accept, down = reject
+  else if (type === 0xb0) {                         // other knobs and wheels: one of them sets the boldness
+    comp.call("cc", [data2, data1]);
+  }
+}
+function refreshMidi() {
+  const sel = $("midiIn"), keep = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  let count = 0;
+  midi.inputs.forEach(input => { input.onmidimessage = onMidi; sel.add(new Option(input.name, input.id)); count++; });
+  sel.value = keep;
+  $("midiState").textContent = count ? `找到 ${count} 个 MIDI 输入` : "没找到 MIDI 键盘，插上后会自动出现";
+}
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then(access => { midi = access; access.onstatechange = refreshMidi; refreshMidi(); },
+    () => { $("midiState").textContent = "浏览器没有允许使用 MIDI，请在地址栏左边的权限里允许"; });
+} else $("midiState").textContent = "这个浏览器不支持 MIDI，请用 Chrome 或 Edge";
+
+// for testing without a keyboard: coplay.note(60, 90) / coplay.note(60, 0)
+window.coplay = { note: handleNote, comp, chordName, start: togglePlay };
+</script>
+</body>
+</html>
